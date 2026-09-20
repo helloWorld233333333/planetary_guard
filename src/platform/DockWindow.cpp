@@ -36,7 +36,6 @@ constexpr UINT kHideTimerId = 0x5047U;
 constexpr UINT kShowTimerId = 0x5048U;
 constexpr UINT kRunningStateTimerId = 0x5049U;
 constexpr UINT kAnimationTimerId = 0x5050U;
-constexpr UINT kDismissAfterActivationMessage = WM_APP + 80U;
 constexpr UINT kContextOpenCommand = 1001U;
 constexpr UINT kContextRemoveCommand = 1002U;
 constexpr UINT kContextAddCommand = 1003U;
@@ -425,6 +424,33 @@ void DockWindow::hideDock() {
         ShowWindow(edgeWindow_, SW_SHOWNOACTIVATE);
         autoHideController_.onHideCompleted();
     }
+}
+
+/** 成功打开应用后同步记录意图；菜单或鼠标锁释放时再执行，不依赖消息时序。 */
+void DockWindow::dismissAfterApplicationActivation() {
+    if (manuallyHidden_ || hiddenForFullscreen_) return;
+    autoHideController_.onApplicationActivated();
+    if (autoHideController_.wantsHide()) hideDock();
+}
+
+void DockWindow::releaseVisibilityLock() {
+    autoHideController_.releaseVisibilityLock();
+    if (autoHideController_.wantsHide()) hideDock();
+}
+
+/** 外部应用获得前台也收起；桌面、任务栏和 Dock 自己的设置窗口不触发。 */
+void DockWindow::handleForegroundChanged(HWND foreground) {
+    if (!foreground || foreground != GetForegroundWindow() || !IsWindowVisible(foreground)) return;
+    DWORD processId = 0;
+    GetWindowThreadProcessId(foreground, &processId);
+    if (!processId || processId == GetCurrentProcessId()) return;
+    const LONG_PTR style = GetWindowLongPtrW(foreground, GWL_EXSTYLE);
+    if (style & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) return;
+    wchar_t name[128]{};
+    GetClassNameW(foreground, name, static_cast<int>(std::size(name)));
+    if (lstrcmpW(name, L"Progman") == 0 || lstrcmpW(name, L"WorkerW") == 0 ||
+        lstrcmpW(name, L"Shell_TrayWnd") == 0 || lstrcmpW(name, L"Shell_SecondaryTrayWnd") == 0) return;
+    dismissAfterApplicationActivation();
 }
 
 void DockWindow::showDockFromEdge() {
@@ -988,7 +1014,7 @@ void DockWindow::showContextMenu(int screenX, int screenY) {
     HMENU menu = CreatePopupMenu();
     if (menu == nullptr) {
         menuOpen_ = false;
-        autoHideController_.releaseVisibilityLock();
+        releaseVisibilityLock();
         return;
     }
     if (!itemId.empty()) {
@@ -1025,7 +1051,8 @@ void DockWindow::showContextMenu(int screenX, int screenY) {
         saveItems();
     } else if (command == kContextRecycleCommand) {
         std::wstring error;
-        launcher_.launch(L"shell:RecycleBinFolder", L"", L"", &error);
+        if (launcher_.launch(L"shell:RecycleBinFolder", L"", L"", &error))
+            dismissAfterApplicationActivation();
     } else if (command == kContextEmptyRecycleCommand) {
         // 保留 Windows 自带的删除确认，不使用 SHERB_NOCONFIRMATION。
         SHEmptyRecycleBinW(hwnd_, nullptr, 0);
@@ -1045,7 +1072,7 @@ void DockWindow::showContextMenu(int screenX, int screenY) {
     } else if (command == kContextAddCommand) {
         openFilePicker();
     }
-    autoHideController_.releaseVisibilityLock();
+    releaseVisibilityLock();
 }
 
 void DockWindow::handleTrayCallback(LPARAM lParam) {
@@ -1220,7 +1247,7 @@ void DockWindow::showFolderContents(const domain::DockItem& item) {
     if (item.targetPath.starts_with(L"\\\\")) {
         std::wstring error;
         if (launcher_.launch(item.targetPath, L"", L"", &error))
-            PostMessageW(hwnd_, kDismissAfterActivationMessage, 0, 0);
+            dismissAfterApplicationActivation();
         return;
     }
     std::vector<std::filesystem::path> entries;
@@ -1250,13 +1277,13 @@ void DockWindow::showFolderContents(const domain::DockItem& item) {
                                         point.x, point.y, 0, hwnd_, nullptr);
     DestroyMenu(menu);
     menuOpen_ = false;
-    autoHideController_.releaseVisibilityLock();
+    releaseVisibilityLock();
     std::wstring launchError;
     bool launched = false;
     if (command == 1) launched = launcher_.launch(item.targetPath, L"", L"", &launchError);
     else if (command >= 10 && command - 10 < entries.size())
         launched = launcher_.launch(entries[command - 10].wstring(), L"", L"", &launchError);
-    if (launched) PostMessageW(hwnd_, kDismissAfterActivationMessage, 0, 0);
+    if (launched) dismissAfterApplicationActivation();
     if (!launchError.empty()) MessageBoxW(hwnd_, launchError.c_str(), L"打开失败", MB_OK | MB_ICONWARNING);
 }
 
@@ -1273,7 +1300,7 @@ void DockWindow::activateOrOpen(const domain::DockItem& source) {
             if (window.executable == identity) matching.push_back(window);
     }
     if (matching.size() == 1 && activateApplicationWindow(matching.front())) {
-        PostMessageW(hwnd_, kDismissAfterActivationMessage, 0, 0);
+        dismissAfterApplicationActivation();
         return;
     }
     if (matching.size() > 1) {
@@ -1289,9 +1316,9 @@ void DockWindow::activateOrOpen(const domain::DockItem& source) {
             point.x, point.y, 0, hwnd_, nullptr);
         DestroyMenu(menu);
         menuOpen_ = false;
-        autoHideController_.releaseVisibilityLock();
+        releaseVisibilityLock();
         if (selected > 0 && selected <= matching.size() && activateApplicationWindow(matching[selected - 1]))
-            PostMessageW(hwnd_, kDismissAfterActivationMessage, 0, 0);
+            dismissAfterApplicationActivation();
         return;
     }
         std::wstring errorMessage;
@@ -1304,7 +1331,7 @@ void DockWindow::activateOrOpen(const domain::DockItem& source) {
                         L"Planetary Guard",
                         MB_OK | MB_ICONWARNING);
         } else {
-            PostMessageW(hwnd_, kDismissAfterActivationMessage, 0, 0);
+            dismissAfterApplicationActivation();
         }
 }
 
@@ -1379,19 +1406,12 @@ LRESULT DockWindow::handleEdgeMessage(UINT message, WPARAM wParam, LPARAM lParam
 }
 
 LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
-    if (message == kDismissAfterActivationMessage) {
-        // 延迟到按钮或菜单事件返回以后，确保可见性锁已经释放。
-        if (!manuallyHidden_ && !hiddenForFullscreen_) {
-            autoHideController_.onApplicationActivated();
-            if (autoHideController_.wantsHide()) hideDock();
-        }
-        return 0;
-    }
     if (message == TrayController::kCallbackMessage) {
         handleTrayCallback(lParam);
         return 0;
     }
     if (message == FullscreenDetector::kChangedMessage) {
+        handleForegroundChanged(reinterpret_cast<HWND>(wParam));
         handleFullscreenChanged();
         return 0;
     }
@@ -1459,6 +1479,8 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     case WM_MOUSEMOVE:
+        // 隐藏后仍可能收到已排队的移动消息；不能因此进入 Showing 或重启动画。
+        if (!IsWindowVisible(hwnd_)) return 0;
         if (tooltipWindow_ != nullptr && !dragging_) {
             const int hovered = hitTest(static_cast<float>(GET_X_LPARAM(lParam)),
                                         static_cast<float>(GET_Y_LPARAM(lParam)));
@@ -1515,7 +1537,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         pressedItemId_.clear();
         dragging_ = false;
-        autoHideController_.releaseVisibilityLock();
+        releaseVisibilityLock();
         return 0;
     case WM_TIMER:
         if (wParam == kAnimationTimerId) {
@@ -1545,7 +1567,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (GetCapture() == hwnd_) ReleaseCapture();
         pressedItemId_.clear();
         dragging_ = false;
-        autoHideController_.releaseVisibilityLock();
+        releaseVisibilityLock();
         return 0;
     case WM_DPICHANGED:
         dpiScale_ = static_cast<float>(HIWORD(wParam)) / 96.0F;

@@ -39,9 +39,27 @@ void testActivationDismissesWithoutAutoHideAndEdgeRestores() {
     controller.onApplicationActivated();
     expectTrue(!controller.wantsHide(), "menu and drag visibility locks must be respected");
     controller.releaseVisibilityLock();
+    expectTrue(controller.wantsHide(), "activation request must survive a visibility lock");
+    controller.onHideCompleted();
     controller.setFullscreen(true);
     controller.onApplicationActivated();
     expectTrue(!controller.wantsHide(), "fullscreen must not expose activation edge");
+}
+
+void testActivationDuringNestedMenuAndShowing() {
+    AutoHideController controller(false);
+    controller.acquireVisibilityLock();
+    controller.acquireVisibilityLock();
+    controller.onApplicationActivated();
+    controller.releaseVisibilityLock();
+    expectTrue(!controller.wantsHide(), "inner menu release must not dismiss outer interaction");
+    controller.releaseVisibilityLock();
+    expectTrue(controller.wantsHide(), "last lock release must execute queued dismissal");
+    controller.onHideCompleted();
+    controller.onMouseEnter();
+    expectTrue(controller.wantsShow(), "edge should still wake the dock");
+    controller.onApplicationActivated();
+    expectTrue(controller.wantsHide(), "activation during showing must not be discarded");
 }
 
 void testEnterCancelsPendingAndShowsHiddenDock() {
@@ -102,6 +120,7 @@ int main() {
     try {
         testLeaveAndTimeoutHide();
         testActivationDismissesWithoutAutoHideAndEdgeRestores();
+        testActivationDuringNestedMenuAndShowing();
         testEnterCancelsPendingAndShowsHiddenDock();
         testVisibilityLockPreventsHide();
         testFullscreenSuspendsAndTrayCanShow();

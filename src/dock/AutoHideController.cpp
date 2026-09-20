@@ -46,14 +46,20 @@ void AutoHideController::onHideTimer() {
 }
 
 void AutoHideController::onApplicationActivated() {
-    if (!fullscreen_ && visibilityLockCount_ == 0U &&
-        (state_ == AutoHideState::Visible || state_ == AutoHideState::HidePending)) {
+    if (fullscreen_ || state_ == AutoHideState::Hidden || state_ == AutoHideState::Suspended) return;
+    activationDismissalPending_ = true;
+    applyActivationDismissal();
+}
+
+void AutoHideController::applyActivationDismissal() {
+    if (activationDismissalPending_ && !fullscreen_ && visibilityLockCount_ == 0U) {
         state_ = AutoHideState::Hiding;
     }
 }
 
 void AutoHideController::onHideCompleted() {
     if (state_ == AutoHideState::Hiding) {
+        activationDismissalPending_ = false;
         state_ = fullscreen_ ? AutoHideState::Suspended : AutoHideState::Hidden;
     }
 }
@@ -79,6 +85,7 @@ void AutoHideController::setFullscreen(bool fullscreen) {
 }
 
 void AutoHideController::forceShow() {
+    activationDismissalPending_ = false;
     if (state_ == AutoHideState::Hidden || state_ == AutoHideState::Hiding ||
         state_ == AutoHideState::HidePending || state_ == AutoHideState::Suspended) {
         state_ = AutoHideState::Showing;
@@ -96,6 +103,7 @@ void AutoHideController::releaseVisibilityLock() {
     if (visibilityLockCount_ > 0U) {
         --visibilityLockCount_;
     }
+    applyActivationDismissal();
 }
 
 std::size_t AutoHideController::visibilityLockCount() const {

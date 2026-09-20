@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(PlanetaryGuard VERSION 0.1.5 LANGUAGES CXX)
+project(PlanetaryGuard VERSION 0.1.6 LANGUAGES CXX)
 
 if(MSVC AND MSVC_VERSION LESS 1929)
     message(FATAL_ERROR
@@ -123,6 +123,16 @@ if(PLANETARY_GUARD_BUILD_TESTS)
     add_test(NAME planetary_icon_normalizer_tests COMMAND planetary_icon_normalizer_tests)
 
     if(WIN32)
+        if(TARGET planetary_guard)
+            # 复用生产窗口实现，覆盖状态机到真实 HWND 可见性的边界。
+            get_target_property(dock_test_sources planetary_guard SOURCES)
+            list(REMOVE_ITEM dock_test_sources src/main.cpp resources/planetary_guard.rc)
+            get_target_property(dock_test_libraries planetary_guard LINK_LIBRARIES)
+            add_executable(planetary_dock_visibility_tests tests/dock_visibility_tests.cpp ${dock_test_sources})
+            target_compile_definitions(planetary_dock_visibility_tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+            target_link_libraries(planetary_dock_visibility_tests PRIVATE ${dock_test_libraries})
+            add_test(NAME planetary_dock_visibility_tests COMMAND planetary_dock_visibility_tests)
+        endif()
         add_executable(planetary_render_tests tests/render_tests.cpp src/platform/DockRenderer.cpp)
         target_compile_definitions(planetary_render_tests PRIVATE UNICODE _UNICODE NOMINMAX)
         target_link_libraries(planetary_render_tests PRIVATE planetary_core d2d1 dwrite dwmapi advapi32 gdi32 user32 ole32)

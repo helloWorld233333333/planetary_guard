@@ -39,6 +39,7 @@ public:
     const std::wstring& creationError() const;
 
 private:
+    friend struct DockVisibilityTestAccess;
     static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK edgeWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -52,6 +53,9 @@ private:
     void positionEdgeWindow();
     void showDock();
     void hideDock();
+    void dismissAfterApplicationActivation();
+    void releaseVisibilityLock();
+    void handleForegroundChanged(HWND foreground);
     void showDockFromEdge();
     void scheduleHide();
     void applyWindowOpacity();

@@ -46,13 +46,13 @@ bool FullscreenDetector::isFullscreen() const {
 
 void CALLBACK FullscreenDetector::eventCallback(HWINEVENTHOOK /*hook*/,
                                                 DWORD /*event*/,
-                                                HWND /*hwnd*/,
+                                                HWND hwnd,
                                                 LONG /*objectId*/,
                                                 LONG /*childId*/,
                                                 DWORD /*eventThreadId*/,
                                                 DWORD /*eventTime*/) {
     if (callbackTarget_ != nullptr) {
-        PostMessageW(callbackTarget_, kChangedMessage, 0, 0);
+        PostMessageW(callbackTarget_, kChangedMessage, reinterpret_cast<WPARAM>(hwnd), 0);
     }
 }
 

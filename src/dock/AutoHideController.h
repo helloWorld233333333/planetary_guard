@@ -47,9 +47,11 @@ public:
 
 private:
     bool canHide() const;
+    void applyActivationDismissal();
 
     bool enabled_ = false;
     bool fullscreen_ = false;
+    bool activationDismissalPending_ = false;
     std::size_t visibilityLockCount_ = 0U;
     AutoHideState state_ = AutoHideState::Visible;
 };
