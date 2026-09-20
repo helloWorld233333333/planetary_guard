@@ -1,0 +1,14 @@
+# Visual Studio / CMake generated files
+build/
+build-*/
+.vs/
+out/
+dist/
+*.user
+*.suo
+*.vcxproj.user
+
+# Local diagnostics
+*.log
+*.pdb
+*.ilk
