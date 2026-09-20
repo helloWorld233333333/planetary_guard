@@ -40,6 +40,21 @@ void testHoverRevealRequiresReentryAndContinuousDwell() {
     expectTrue(reveal.update(true, 80, 80), "external activation allows first hover");
 }
 
+void testDragSuppressesRevealAndResetsDwell() {
+    planetary::dock::HoverRevealController reveal;
+    reveal.begin(false);
+    expectTrue(!reveal.update(true, 0, 300), "entry must not reveal immediately");
+    expectTrue(!reveal.update(true, 299, 300), "300ms continuous dwell required");
+    expectTrue(reveal.update(true, 300, 300), "300ms should reveal");
+    reveal.begin(false);
+    expectTrue(!reveal.update(true, 1000, 300), "new entry starts dwell");
+    expectTrue(!reveal.update(true, 1400, 300, true), "held button must suppress reveal");
+    expectTrue(!reveal.update(true, 1800, 300, false), "releasing over edge must not resurrect old dwell");
+    reveal.update(false, 1900, 300);
+    expectTrue(!reveal.update(true, 2000, 300), "after dragging, reentry restarts dwell");
+    expectTrue(reveal.update(true, 2300, 300), "normal hover should recover after drag");
+}
+
 void testActivationDismissesWithoutAutoHideAndEdgeRestores() {
     AutoHideController controller(false);
     controller.onApplicationActivated();
@@ -136,6 +151,7 @@ int main() {
     try {
         testLeaveAndTimeoutHide();
         testHoverRevealRequiresReentryAndContinuousDwell();
+        testDragSuppressesRevealAndResetsDwell();
         testActivationDismissesWithoutAutoHideAndEdgeRestores();
         testActivationDuringNestedMenuAndShowing();
         testEnterCancelsPendingAndShowsHiddenDock();

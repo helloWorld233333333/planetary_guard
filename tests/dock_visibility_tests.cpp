@@ -30,9 +30,7 @@ struct DockVisibilityTestAccess {
 
         for (const bool autoHide : {false, true}) {
             dock.autoHideController_ = dock::AutoHideController(autoHide);
-            ShowWindow(dock.hwnd_, SW_SHOWNOACTIVATE);
-            ShowWindow(dock.backdropWindow_, SW_SHOWNOACTIVATE);
-            ShowWindow(dock.edgeWindow_, SW_HIDE);
+            dock.showDock();
             dock.autoHideController_.acquireVisibilityLock();
             dock.autoHideController_.acquireVisibilityLock();
             dock.dismissAfterApplicationActivation();
@@ -46,12 +44,16 @@ struct DockVisibilityTestAccess {
             const RECT activationBounds = dock.revealBounds_;
             RECT originalBounds{};
             GetWindowRect(dock.hwnd_, &originalBounds);
-            expect(activationBounds.top <= originalBounds.top,
-                   "hovering the original Dock area must be able to restore it");
             MONITORINFO monitor{sizeof(MONITORINFO)};
             GetMonitorInfoW(dock.targetMonitor(), &monitor);
             expect(activationBounds.bottom == monitor.rcMonitor.bottom,
                    "reveal area must reach physical bottom below the taskbar");
+            expect(activationBounds.top == monitor.rcMonitor.bottom - 2,
+                   "only physical bottom two pixels should activate");
+            const POINT inputArea{originalBounds.left + 10, originalBounds.top + 10};
+            dock.updateRevealPointer(inputArea, 100);
+            dock.updateRevealPointer(inputArea, 900);
+            expect(!IsWindowVisible(dock.hwnd_), "input area must not reveal even after a long dwell");
             dock.handleMessage(WM_MOUSEMOVE, 0, MAKELPARAM(20, 20));
             expect(dock.autoHideController_.state() == dock::AutoHideState::Hidden,
                    "stale pointer message must not undo dismissal");
@@ -61,10 +63,12 @@ struct DockVisibilityTestAccess {
             expect(!IsWindowVisible(dock.hwnd_), "manual hide must win over edge events");
             dock.manuallyHidden_ = false;
             dock.updateRevealPointer({activationBounds.left - 1, activationBounds.top}, 1000);
-            const POINT hover{activationBounds.left + 5, activationBounds.top + 5};
+            const POINT hover{activationBounds.left + 5, activationBounds.bottom - 1};
             dock.updateRevealPointer(hover, 1100);
             expect(!IsWindowVisible(dock.hwnd_), "hover delay must be honored");
-            dock.updateRevealPointer(hover, 1181);
+            dock.updateRevealPointer(hover, 1399);
+            expect(!IsWindowVisible(dock.hwnd_), "299ms must still stay hidden");
+            dock.updateRevealPointer(hover, 1400);
             expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
                    "hover must actually restore both native windows");
             expect(dock.autoHideController_.state() == dock::AutoHideState::Visible,
@@ -75,15 +79,25 @@ struct DockVisibilityTestAccess {
             dock.dismissAfterApplicationActivation();
             expect(!IsWindowVisible(dock.hwnd_) && !IsWindowVisible(dock.backdropWindow_),
                    "unlocked activation must hide both layers synchronously");
-            // 不移动真实鼠标：将测试热区放到当前位置，验证真正的 WM_TIMER 分发。
+            dock.updateRevealPointer(hover, 2000, true);
+            dock.updateRevealPointer(hover, 2500, true);
+            dock.updateRevealPointer(hover, 2800, false);
+            expect(!IsWindowVisible(dock.hwnd_), "drag and release at bottom must not reveal");
+            dock.updateRevealPointer(inputArea, 2900);
+            dock.updateRevealPointer(hover, 3000);
+            dock.updateRevealPointer(hover, 3300);
+            expect(IsWindowVisible(dock.hwnd_), "hover should recover after leaving dragged edge");
+            dock.dismissAfterApplicationActivation();
+            // 不移动真实鼠标：检验真实定时器会刷新几何，而不是沿用过期热区。
             POINT current{};
             expect(GetCursorPos(&current), "cursor read failed");
             dock.revealBounds_ = {current.x - 100, current.y - 100, current.x + 100, current.y + 100};
             dock.hoverRevealController_.begin(false);
-            dock.hoverRevealController_.update(true, 0, 80);
+            dock.hoverRevealController_.update(true, 0, 300);
             SendMessageW(dock.hwnd_, WM_TIMER, 0x5051U, 0);
-            expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
-                   "main window timer must reach native reveal path");
+            expect(dock.revealBounds_.top == monitor.rcMonitor.bottom - 2 &&
+                   dock.revealBounds_.bottom == monitor.rcMonitor.bottom,
+                   "main timer must refresh physical edge even when taskbar changes");
         }
 
         // 同一应用保持前台，不能依赖前台切换事件；外部按下消息必须收起。

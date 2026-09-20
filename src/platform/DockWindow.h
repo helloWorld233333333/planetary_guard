@@ -60,8 +60,9 @@ private:
     void handleForegroundChanged(HWND foreground);
     void showDockFromEdge();
     void startRevealWatch();
+    bool refreshRevealBounds();
     void pollRevealPointer();
-    void updateRevealPointer(POINT pointer, ULONGLONG now);
+    void updateRevealPointer(POINT pointer, ULONGLONG now, bool pointerPressed = false);
     void scheduleHide();
     void applyWindowOpacity();
     void applyBackdropEffect();

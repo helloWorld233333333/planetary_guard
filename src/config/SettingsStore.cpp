@@ -305,7 +305,7 @@ bool SettingsStore::loadFile(const std::filesystem::path& path,
         parsedSettings.behavior.hideDelayMs = static_cast<std::uint32_t>(std::clamp(delay, kMinimumDelay, kMaximumDelay));
         delay = parsedSettings.behavior.showDelayMs;
         if (!readNumber(*behavior, "showDelayMs", delay, errorMessage, false)) return false;
-        parsedSettings.behavior.showDelayMs = static_cast<std::uint32_t>(std::clamp(delay, kMinimumDelay, kMaximumDelay));
+        parsedSettings.behavior.showDelayMs = static_cast<std::uint32_t>(std::clamp(delay, 300.0, kMaximumDelay));
     }
 
     const JsonValue* placementValue = findField(*root, "placement");
@@ -343,7 +343,7 @@ bool SettingsStore::save(const domain::AppSettings& settings,
     JsonObject behavior;
     behavior.emplace("autoHide", JsonValue(settings.behavior.autoHide));
     behavior.emplace("hideDelayMs", JsonValue(static_cast<double>(std::clamp(settings.behavior.hideDelayMs, 20U, 10000U))));
-    behavior.emplace("showDelayMs", JsonValue(static_cast<double>(std::clamp(settings.behavior.showDelayMs, 20U, 10000U))));
+    behavior.emplace("showDelayMs", JsonValue(static_cast<double>(std::clamp(settings.behavior.showDelayMs, 300U, 10000U))));
     behavior.emplace("hideInFullscreen", JsonValue(settings.behavior.hideInFullscreen));
     behavior.emplace("launchAtStartup", JsonValue(settings.behavior.launchAtStartup));
 

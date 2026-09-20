@@ -27,6 +27,7 @@ void testSettingsRoundTripAndBackupRecovery() {
     original.appearance.dockOpacity = 0.72F;
     original.behavior.autoHide = true;
     original.behavior.hideDelayMs = 900U;
+    original.behavior.showDelayMs = 80U;
     original.behavior.launchAtStartup = true;
     original.placement.monitorId = L"DISPLAY-TEST";
 
@@ -35,6 +36,7 @@ void testSettingsRoundTripAndBackupRecovery() {
 
     planetary::domain::AppSettings loaded;
     expectTrue(store.load(loaded, &error), "settings should load");
+    expectTrue(loaded.behavior.showDelayMs == 300U, "legacy short hover delay must clamp to 300ms");
     expectTrue(loaded.appearance.themeMode == planetary::domain::ThemeMode::Dark,
                "theme should round-trip");
     expectTrue(loaded.appearance.visualRevision == 4U,

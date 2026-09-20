@@ -30,7 +30,7 @@ struct AppearanceSettings {
 struct BehaviorSettings {
     bool autoHide = false;
     std::uint32_t hideDelayMs = 600U;
-    std::uint32_t showDelayMs = 80U;
+    std::uint32_t showDelayMs = 300U;
     bool hideInFullscreen = true;
     bool launchAtStartup = false;
 };

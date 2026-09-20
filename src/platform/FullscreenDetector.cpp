@@ -1,4 +1,5 @@
 #include "platform/FullscreenDetector.h"
+#include "platform/DesktopGeometry.h"
 
 #include <dwmapi.h>
 
@@ -68,6 +69,7 @@ bool FullscreenDetector::isFullscreenWindow(HWND window) const {
     GetClassNameW(window, className, static_cast<int>(std::size(className)));
     if (lstrcmpW(className, L"Progman") == 0 ||
         lstrcmpW(className, L"Shell_TrayWnd") == 0 ||
+        lstrcmpW(className, L"Shell_SecondaryTrayWnd") == 0 ||
         lstrcmpW(className, L"WorkerW") == 0) {
         return false;
     }
@@ -85,12 +87,8 @@ bool FullscreenDetector::isFullscreenWindow(HWND window) const {
     const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
     if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitorInfo)) return false;
 
-    const RECT& monitorRect = monitorInfo.rcMonitor;
-    constexpr LONG kTolerance = 2L;
-    return std::abs(windowRect.left - monitorRect.left) <= kTolerance &&
-           std::abs(windowRect.top - monitorRect.top) <= kTolerance &&
-           std::abs(windowRect.right - monitorRect.right) <= kTolerance &&
-           std::abs(windowRect.bottom - monitorRect.bottom) <= kTolerance;
+    return isFullscreenCoverage(windowRect, monitorInfo.rcMonitor,
+                                IsZoomed(window) != FALSE, GetWindowLongPtrW(window, GWL_STYLE));
 }
 
 } // namespace planetary::platform

@@ -1,5 +1,6 @@
 #include "platform/DockWindow.h"
 #include "platform/WindowCatalog.h"
+#include "platform/DesktopGeometry.h"
 
 #include <commdlg.h>
 #include <commctrl.h>
@@ -292,7 +293,15 @@ void DockWindow::positionWindow() {
         }
     }
 
-    const RECT& workArea = monitorInfo.rcWork;
+    // 查询目标显示器底边的自动隐藏任务栏。只移动 Dock，不改变任务栏设置。
+    APPBARDATA taskbar{sizeof(APPBARDATA)};
+    taskbar.uEdge = ABE_BOTTOM;
+    taskbar.rc = monitorInfo.rcMonitor;
+    const HWND autoHideBar = reinterpret_cast<HWND>(SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &taskbar));
+    RECT taskbarRect{};
+    const LONG taskbarHeight = autoHideBar && GetWindowRect(autoHideBar, &taskbarRect)
+                                   ? taskbarRect.bottom - taskbarRect.top : 0;
+    const RECT workArea = dockWorkArea(monitorInfo.rcMonitor, monitorInfo.rcWork, taskbarHeight);
     const int workWidth = workArea.right - workArea.left;
     const int width = std::max(kMinimumDockWidth, static_cast<int>(layout_.width));
     const int height = std::max(1, static_cast<int>(layout_.height));
@@ -432,15 +441,20 @@ void DockWindow::hideDock() {
     }
 }
 
-/** 热区覆盖原 Dock 到屏幕底边。只在隐藏时读取鼠标位置，不覆盖或拦截其他窗口。 */
+/** 热区始终基于物理屏幕边界，不随任务栏展开或隐藏而变化。 */
+bool DockWindow::refreshRevealBounds() {
+    RECT dockBounds{};
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (!GetWindowRect(hwnd_, &dockBounds) || !GetMonitorInfoW(targetMonitor(), &monitor)) return false;
+    revealBounds_ = bottomRevealBounds(monitor.rcMonitor, dockBounds);
+    return true;
+}
+
+/** 隐藏时检测底边停留，不创建拦截鼠标的窗口，系统任务栏覆盖边缘也不影响检测。 */
 void DockWindow::startRevealWatch() {
     if (manuallyHidden_ || hiddenForFullscreen_) return;
     ShowWindow(edgeWindow_, SW_HIDE);
-    if (!GetWindowRect(hwnd_, &revealBounds_)) return;
-    MONITORINFO monitor{sizeof(MONITORINFO)};
-    if (GetMonitorInfoW(targetMonitor(), &monitor)) {
-        revealBounds_.bottom = monitor.rcMonitor.bottom;
-    }
+    if (!refreshRevealBounds()) return;
     POINT pointer{};
     const bool inside = GetCursorPos(&pointer) && PtInRect(&revealBounds_, pointer);
     hoverRevealController_.begin(inside);
@@ -449,13 +463,16 @@ void DockWindow::startRevealWatch() {
 
 void DockWindow::pollRevealPointer() {
     POINT pointer{};
-    if (GetCursorPos(&pointer)) updateRevealPointer(pointer, GetTickCount64());
+    if (!refreshRevealBounds() || !GetCursorPos(&pointer)) return;
+    const bool pointerPressed = ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) |
+        GetAsyncKeyState(VK_MBUTTON) | GetAsyncKeyState(VK_XBUTTON1) | GetAsyncKeyState(VK_XBUTTON2)) & 0x8000) != 0;
+    updateRevealPointer(pointer, GetTickCount64(), pointerPressed);
 }
 
-void DockWindow::updateRevealPointer(POINT pointer, ULONGLONG now) {
+void DockWindow::updateRevealPointer(POINT pointer, ULONGLONG now, bool pointerPressed) {
     if (manuallyHidden_ || hiddenForFullscreen_ || IsWindowVisible(hwnd_)) return;
     if (hoverRevealController_.update(PtInRect(&revealBounds_, pointer) != FALSE, now,
-            std::max(20U, settings_.behavior.showDelayMs))) {
+            std::max(300U, settings_.behavior.showDelayMs), pointerPressed)) {
         showDockFromEdge();
     }
 }
@@ -1422,7 +1439,7 @@ LRESULT DockWindow::handleEdgeMessage(UINT message, WPARAM wParam, LPARAM lParam
             trackingEdgeMouse_ = TrackMouseEvent(&trackingEvent) != FALSE;
             SetTimer(edgeWindow_,
                      kShowTimerId,
-                     std::max(20U, settings_.behavior.showDelayMs),
+                     std::max(300U, settings_.behavior.showDelayMs),
                      nullptr);
         }
         return 0;
@@ -1500,6 +1517,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         const std::wstring previousMonitorId = settings_.placement.monitorId;
         updateLayout();
         positionEdgeWindow();
+        handleFullscreenChanged();
         if (settings_.placement.monitorId != previousMonitorId) {
             settingsStore_.save(settings_, nullptr);
         }
@@ -1600,6 +1618,8 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         if (wParam == kRunningStateTimerId) {
+            // 最大化/F11/任务栏设置可在不切换前台窗口时发生，低频复核避免卡在全屏状态。
+            handleFullscreenChanged();
             refreshRunningState();
             return 0;
         }
