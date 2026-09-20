@@ -726,13 +726,8 @@ void DockWindow::refreshRunningState() {
         items_.push_back(std::move(item));
         changed = true;
     }
-    std::stable_sort(items_.begin(), items_.end(), [](const auto& a, const auto& b) {
-        const auto section = [](const auto& item) {
-            if (item.type == domain::DockItemType::Folder || item.type == domain::DockItemType::File) return 2;
-            return item.transient ? 1 : 0;
-        };
-        return section(a) < section(b);
-    });
+    // items_ 的相对顺序由用户拖拽决定。刷新只删除已退出的临时应用、
+    // 更新运行标记并在末尾追加新应用，不能按类型重新分组覆盖手动排序。
     if (changed && hwnd_ != nullptr) {
         requestIcons();
         updateLayout();

@@ -11,6 +11,21 @@ struct DockVisibilityTestAccess {
     }
 
     static void run() {
+        {
+            // 无 HWND、不读写用户配置：刷新运行状态不得覆盖用户混合排列。
+            DockWindow ordered(GetModuleHandleW(nullptr));
+            ordered.items_ = {
+                {"folder-first", domain::DockItemType::Folder, L"Z folder", L"C:\\dock-order-test"},
+                {"file-second", domain::DockItemType::File, L"B file", L"C:\\dock-order-test.txt"},
+                {"apifox-last", domain::DockItemType::Application, L"Apifox", L"C:\\dock-order-test.exe"},
+            };
+            for (int repeat = 0; repeat < 3; ++repeat) {
+                ordered.refreshRunningState();
+                expect(ordered.items_.size() >= 3 && ordered.items_[0].id == "folder-first" &&
+                       ordered.items_[1].id == "file-second" && ordered.items_[2].id == "apifox-last",
+                       "running refresh must preserve manual order, not regroup pinned apps before folders");
+            }
+        }
         DockWindow dock(GetModuleHandleW(nullptr));
         const auto makeWindow = [] {
             return CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,

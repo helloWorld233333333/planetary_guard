@@ -57,6 +57,22 @@ void testStoreRoundTripAndBackupRecovery() {
     expectTrue(store.load(loaded, &error), "corrupt primary file should recover from backup");
     expectTrue(loaded.front().displayName == L"说明.txt", "backup should contain the previous version");
 
+    // 保存按容器顺序重建 order；名称、类型和旧 order 都不能覆盖拖拽顺序。
+    auto folder = original.front();
+    folder.id = "z-folder";
+    folder.type = planetary::domain::DockItemType::Folder;
+    folder.order = 500;
+    auto app = original.front();
+    app.id = "a-apifox";
+    app.type = planetary::domain::DockItemType::Application;
+    app.displayName = L"Apifox";
+    app.order = -10;
+    expectTrue(store.save({folder, temporary, app}, &error), "manual order should save");
+    planetary::config::DockItemStore reopened(store.filePath());
+    expectTrue(reopened.load(loaded, &error), "manual order should reload after restart");
+    expectTrue(loaded.size() == 2 && loaded[0].id == "z-folder" && loaded[1].id == "a-apifox",
+               "restart must preserve manual order and exclude transient entries");
+
     std::filesystem::remove_all(directory, cleanupError);
 }
 
