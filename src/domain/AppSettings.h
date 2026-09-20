@@ -32,6 +32,8 @@ struct BehaviorSettings {
     std::uint32_t hideDelayMs = 600U;
     std::uint32_t showDelayMs = 300U;
     bool hideInFullscreen = true;
+    /** 桌面获得前台时保持 Dock 可见；手动隐藏仍优先。 */
+    bool showOnDesktop = false;
     bool launchAtStartup = false;
 };
 

@@ -43,6 +43,7 @@ private:
     HWND owner_ = nullptr;
     HWND hwnd_ = nullptr;
     HWND autoHideCheck_ = nullptr;
+    HWND desktopCheck_ = nullptr;
     HWND fullscreenCheck_ = nullptr;
     HWND startupCheck_ = nullptr;
     HWND reduceMotionCheck_ = nullptr;

@@ -26,6 +26,7 @@ void testSettingsRoundTripAndBackupRecovery() {
     original.appearance.iconSizeDip = 52.0F;
     original.appearance.dockOpacity = 0.72F;
     original.behavior.autoHide = true;
+    original.behavior.showOnDesktop = true;
     original.behavior.hideDelayMs = 900U;
     original.behavior.showDelayMs = 80U;
     original.behavior.launchAtStartup = true;
@@ -36,6 +37,7 @@ void testSettingsRoundTripAndBackupRecovery() {
 
     planetary::domain::AppSettings loaded;
     expectTrue(store.load(loaded, &error), "settings should load");
+    expectTrue(loaded.behavior.showOnDesktop, "desktop visibility option should round-trip");
     expectTrue(loaded.behavior.showDelayMs == 300U, "legacy short hover delay must clamp to 300ms");
     expectTrue(loaded.appearance.themeMode == planetary::domain::ThemeMode::Dark,
                "theme should round-trip");
@@ -49,7 +51,10 @@ void testSettingsRoundTripAndBackupRecovery() {
                "monitor id should round-trip");
 
     original.behavior.autoHide = false;
+    original.behavior.showOnDesktop = false;
     expectTrue(store.save(original, &error), "second settings save should succeed");
+    expectTrue(store.load(loaded, &error) && !loaded.behavior.showOnDesktop,
+               "desktop option can be disabled and saved");
     {
         std::ofstream broken(store.filePath(), std::ios::binary | std::ios::trunc);
         broken << "{broken";

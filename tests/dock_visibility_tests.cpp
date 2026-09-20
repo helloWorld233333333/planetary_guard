@@ -43,6 +43,37 @@ struct DockVisibilityTestAccess {
         dock.layout_ = dock.layoutEngine_.calculate(dock.items_, -1, 1);
         dock.targetLayout_ = dock.layout_;
 
+        // 自建桌面类窗口注入前台判定，不切换用户前台、不模拟 Win+D。
+        WNDCLASSW desktopClass{};
+        desktopClass.lpfnWndProc = DefWindowProcW;
+        desktopClass.hInstance = GetModuleHandleW(nullptr);
+        desktopClass.lpszClassName = L"WorkerW";
+        RegisterClassW(&desktopClass);
+        HWND desktop = CreateWindowExW(0, L"WorkerW", L"Desktop fixture", WS_POPUP,
+            -30000, -30000, 10, 10, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+        expect(desktop != nullptr, "desktop fixture must exist");
+        dock.settings_.behavior.showOnDesktop = false;
+        dock.refreshDesktopVisibility(desktop);
+        expect(!IsWindowVisible(dock.hwnd_), "disabled desktop option must not force show");
+        dock.settings_.behavior.showOnDesktop = true;
+        expect(!dock.shouldKeepVisibleOnDesktop(dock.edgeWindow_), "ordinary window is not desktop");
+        dock.refreshDesktopVisibility(desktop);
+        expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
+               "desktop option must restore both dock layers");
+        dock.autoHideController_.setEnabled(true);
+        dock.autoHideController_.onMouseLeave();
+        dock.refreshDesktopVisibility(desktop);
+        expect(dock.autoHideController_.state() == dock::AutoHideState::Visible,
+               "desktop keep-visible must cancel pending automatic hide");
+        dock.manuallyHidden_ = true;
+        ShowWindow(dock.hwnd_, SW_HIDE);
+        ShowWindow(dock.backdropWindow_, SW_HIDE);
+        dock.refreshDesktopVisibility(desktop);
+        expect(!IsWindowVisible(dock.hwnd_), "manual tray hide wins over desktop visibility");
+        dock.manuallyHidden_ = false;
+        dock.settings_.behavior.showOnDesktop = false;
+        DestroyWindow(desktop);
+
         for (const bool autoHide : {false, true}) {
             dock.autoHideController_ = dock::AutoHideController(autoHide);
             dock.showDock();

@@ -297,6 +297,7 @@ bool SettingsStore::loadFile(const std::filesystem::path& path,
         }
         if (!readBoolean(*behavior, "autoHide", parsedSettings.behavior.autoHide, errorMessage, false) ||
             !readBoolean(*behavior, "hideInFullscreen", parsedSettings.behavior.hideInFullscreen, errorMessage, false) ||
+            !readBoolean(*behavior, "showOnDesktop", parsedSettings.behavior.showOnDesktop, errorMessage, false) ||
             !readBoolean(*behavior, "launchAtStartup", parsedSettings.behavior.launchAtStartup, errorMessage, false)) {
             return false;
         }
@@ -345,6 +346,7 @@ bool SettingsStore::save(const domain::AppSettings& settings,
     behavior.emplace("hideDelayMs", JsonValue(static_cast<double>(std::clamp(settings.behavior.hideDelayMs, 20U, 10000U))));
     behavior.emplace("showDelayMs", JsonValue(static_cast<double>(std::clamp(settings.behavior.showDelayMs, 300U, 10000U))));
     behavior.emplace("hideInFullscreen", JsonValue(settings.behavior.hideInFullscreen));
+    behavior.emplace("showOnDesktop", JsonValue(settings.behavior.showOnDesktop));
     behavior.emplace("launchAtStartup", JsonValue(settings.behavior.launchAtStartup));
 
     JsonObject placement;

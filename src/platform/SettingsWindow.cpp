@@ -23,6 +23,7 @@ constexpr int kOpacityEdit = 51009;
 constexpr int kApplyButton = 51010;
 constexpr int kCancelButton = 51011;
 constexpr int kUnifiedIconTilesCheck = 51012;
+constexpr int kDesktopCheck = 51013;
 
 HWND createStatic(HWND parent, const wchar_t* text, int x, int y, int width, int height) {
     HWND control = CreateWindowExW(0,
@@ -94,7 +95,7 @@ bool SettingsWindow::show(HWND owner,
     if (hwnd_ == nullptr) {
         const UINT dpi = owner_ == nullptr ? 96U : GetDpiForWindow(owner_);
         RECT windowRect{0, 0, MulDiv(500, static_cast<int>(dpi), 96),
-                        MulDiv(452, static_cast<int>(dpi), 96)};
+                        MulDiv(484, static_cast<int>(dpi), 96)};
         AdjustWindowRectExForDpi(&windowRect,
                                  WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                  FALSE,
@@ -311,6 +312,19 @@ void SettingsWindow::createControls() {
                                         nullptr);
 
     setFont(autoHideCheck_);
+    // 将外观与位置区域整体下移，为新增的行为选项留一行。
+    for (HWND child = GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        RECT bounds{};
+        GetWindowRect(child, &bounds);
+        MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&bounds), 2);
+        if (bounds.top >= 185)
+            SetWindowPos(child, nullptr, bounds.left, bounds.top + 32, 0, 0,
+                         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    desktopCheck_ = CreateWindowExW(0, L"BUTTON", L"显示桌面时强制显示程序坞",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        28, 185, 400, 24, hwnd_, controlId(kDesktopCheck), instance_, nullptr);
+    setFont(desktopCheck_);
     setFont(fullscreenCheck_);
     setFont(startupCheck_);
     setFont(reduceMotionCheck_);
@@ -383,6 +397,8 @@ void SettingsWindow::refreshMonitorOptions() {
 
 void SettingsWindow::updateControls() {
     if (autoHideCheck_ == nullptr) return;
+    SendMessageW(desktopCheck_, BM_SETCHECK,
+                 settings_.behavior.showOnDesktop ? BST_CHECKED : BST_UNCHECKED, 0);
     refreshMonitorOptions();
     SendMessageW(autoHideCheck_, BM_SETCHECK,
                  settings_.behavior.autoHide ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -411,6 +427,7 @@ void SettingsWindow::updateControls() {
 void SettingsWindow::apply() {
     domain::AppSettings updated = settings_;
     updated.behavior.autoHide = SendMessageW(autoHideCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    updated.behavior.showOnDesktop = SendMessageW(desktopCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     updated.behavior.hideInFullscreen = SendMessageW(fullscreenCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     updated.behavior.launchAtStartup = SendMessageW(startupCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     updated.appearance.reduceMotion = SendMessageW(reduceMotionCheck_, BM_GETCHECK, 0, 0) == BST_CHECKED;

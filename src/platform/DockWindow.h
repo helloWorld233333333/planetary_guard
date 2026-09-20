@@ -72,6 +72,8 @@ private:
     void toggleStartup();
     void openConfigFolder();
     void handleFullscreenChanged();
+    bool shouldKeepVisibleOnDesktop(HWND foreground = GetForegroundWindow()) const;
+    void refreshDesktopVisibility(HWND foreground = GetForegroundWindow());
     void writeDiagnosticState() const;
     void openSettingsWindow();
     void applySettings(const domain::AppSettings& settings);

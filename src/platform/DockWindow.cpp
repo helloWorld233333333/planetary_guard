@@ -48,6 +48,7 @@ constexpr UINT kContextAddApplicationCommand = 1006U;
 constexpr UINT kContextPinCommand = 1007U;
 constexpr UINT kContextRecycleCommand = 1008U;
 constexpr UINT kContextEmptyRecycleCommand = 1009U;
+constexpr UINT kContextSettingsCommand = 1010U;
 
 enum class AccentState : int {
     Disabled = 0,
@@ -519,7 +520,7 @@ void DockWindow::updateRevealPointer(POINT pointer, ULONGLONG now, bool pointerP
 
 /** 成功打开应用后同步记录意图；菜单或鼠标锁释放时再执行，不依赖消息时序。 */
 void DockWindow::dismissAfterApplicationActivation() {
-    if (manuallyHidden_ || hiddenForFullscreen_) return;
+    if (manuallyHidden_ || hiddenForFullscreen_ || shouldKeepVisibleOnDesktop()) return;
     autoHideController_.onApplicationActivated();
     if (autoHideController_.wantsHide()) hideDock();
 }
@@ -582,6 +583,10 @@ void DockWindow::applyBackdropEffect() {
 }
 
 void DockWindow::scheduleHide() {
+    if (shouldKeepVisibleOnDesktop()) {
+        refreshDesktopVisibility();
+        return;
+    }
     if (hwnd_ == nullptr || autoHideController_.state() != dock::AutoHideState::HidePending) {
         return;
     }
@@ -1123,6 +1128,8 @@ void DockWindow::showContextMenu(int screenX, int screenY) {
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kContextRecycleCommand, L"打开回收站");
     AppendMenuW(menu, MF_STRING, kContextEmptyRecycleCommand, L"清空回收站…");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kContextSettingsCommand, L"设置…");
     const UINT command = TrackPopupMenu(menu,
                                         TPM_RETURNCMD | TPM_NONOTIFY,
                                         screenPoint.x,
@@ -1132,7 +1139,9 @@ void DockWindow::showContextMenu(int screenX, int screenY) {
                                         nullptr);
     DestroyMenu(menu);
     menuOpen_ = false;
-    if (command == kContextPinCommand) {
+    if (command == kContextSettingsCommand) {
+        openSettingsWindow();
+    } else if (command == kContextPinCommand) {
         for (auto& item : items_) if (item.id == itemId) item.transient = false;
         saveItems();
     } else if (command == kContextRecycleCommand) {
@@ -1282,6 +1291,29 @@ void DockWindow::applySettings(const domain::AppSettings& settings) {
     saveSettings();
     updateLayout();
     if (!settings_.behavior.autoHide) showDock();
+}
+
+/** 桌面前台由 Shell 窗口标识；任务栏、开始菜单和空白应用窗口不算桌面。 */
+bool DockWindow::shouldKeepVisibleOnDesktop(HWND foreground) const {
+    if (!settings_.behavior.showOnDesktop || manuallyHidden_) return false;
+    if (!foreground) return false;
+    wchar_t className[128]{};
+    GetClassNameW(foreground, className, static_cast<int>(std::size(className)));
+    return lstrcmpW(className, L"Progman") == 0 || lstrcmpW(className, L"WorkerW") == 0 ||
+           foreground == GetShellWindow();
+}
+
+/** Win+D、最小化最后一个应用或点击桌面后，取消待隐藏并恢复 Dock。 */
+void DockWindow::refreshDesktopVisibility(HWND foreground) {
+    if (!shouldKeepVisibleOnDesktop(foreground) || hiddenForFullscreen_) return;
+    KillTimer(hwnd_, kHideTimerId);
+    autoHideController_.forceShow();
+    if (!IsWindowVisible(hwnd_) || IsIconic(hwnd_)) {
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+        showDock();
+    } else if (autoHideController_.wantsShow()) {
+        autoHideController_.onShowCompleted();
+    }
 }
 
 void DockWindow::handleFullscreenChanged() {
@@ -1538,6 +1570,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == FullscreenDetector::kChangedMessage) {
         handleForegroundChanged(reinterpret_cast<HWND>(wParam));
         handleFullscreenChanged();
+        refreshDesktopVisibility();
         return 0;
     }
     if (message == IconLoader::kResultMessage) {
@@ -1677,12 +1710,17 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == kRunningStateTimerId) {
             // 最大化/F11/任务栏设置可在不切换前台窗口时发生，低频复核避免卡在全屏状态。
             handleFullscreenChanged();
+            refreshDesktopVisibility();
             refreshRunningState();
             writeDiagnosticState();
             return 0;
         }
         if (wParam == kHideTimerId) {
             KillTimer(hwnd_, kHideTimerId);
+            if (shouldKeepVisibleOnDesktop()) {
+                refreshDesktopVisibility();
+                return 0;
+            }
             autoHideController_.onHideTimer();
             if (autoHideController_.wantsHide()) {
                 hideDock();
