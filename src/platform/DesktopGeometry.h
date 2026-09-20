@@ -6,6 +6,13 @@
 
 namespace planetary::platform {
 
+/** 为候选显示器计算居中的触底区，不必先移动或显示真实窗口。 */
+inline RECT centeredBottomRevealBounds(const RECT& monitor, LONG width) {
+    width = std::clamp(width, 1L, std::max(1L, monitor.right - monitor.left));
+    const LONG left = monitor.left + (monitor.right - monitor.left - width) / 2;
+    return {left, monitor.bottom - 2, left + width, monitor.bottom};
+}
+
 /** 隐藏热区只占物理屏幕底部两像素，横向限制为 Dock 所在范围。 */
 inline RECT bottomRevealBounds(const RECT& monitor, const RECT& dock) {
     return {std::max(monitor.left, dock.left), monitor.bottom - 2,

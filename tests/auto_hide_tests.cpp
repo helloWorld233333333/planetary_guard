@@ -149,6 +149,12 @@ void testDisablingAutoHideWhileFullscreenRestoresVisibleState() {
 
 int main() {
     try {
+        planetary::dock::HoverRevealController multi;
+        multi.begin(false);
+        expectTrue(!multi.update(true, 100, 300, false, 1), "first screen starts dwell");
+        expectTrue(!multi.update(true, 350, 300, false, 2), "screen change resets dwell");
+        expectTrue(!multi.update(true, 649, 300, false, 2), "second screen needs full 300ms");
+        expectTrue(multi.update(true, 650, 300, false, 2), "second screen reveals after dwell");
         testLeaveAndTimeoutHide();
         testHoverRevealRequiresReentryAndContinuousDwell();
         testDragSuppressesRevealAndResetsDwell();

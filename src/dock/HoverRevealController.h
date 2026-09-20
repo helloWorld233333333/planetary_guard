@@ -14,7 +14,11 @@ public:
     }
 
     bool update(bool pointerInside, std::uint64_t now, std::uint64_t delay,
-                bool pointerPressed = false) {
+                bool pointerPressed = false, std::uintptr_t region = 0) {
+        if (region_ != region) {
+            if (region_ != 0) begin(false);
+            region_ = region;
+        }
         if (pointerPressed) {
             // 拖动取消本次停留；在边缘松手后必须重新进入，不能突然弹出。
             begin(pointerInside);
@@ -31,6 +35,7 @@ public:
     }
 
 private:
+    std::uintptr_t region_ = 0;
     bool armed_ = false;
     std::optional<std::uint64_t> enteredAt_;
 };

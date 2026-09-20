@@ -42,7 +42,14 @@ void FullscreenDetector::shutdown() {
 
 bool FullscreenDetector::isFullscreen() const {
     if (owner_ == nullptr) return false;
-    return isFullscreenWindow(GetForegroundWindow());
+    return isFullscreenOnMonitor(MonitorFromWindow(owner_, MONITOR_DEFAULTTONEAREST));
+}
+
+/** 只抑制全屏应用所在屏幕，其他屏幕仍可触底唤出。 */
+bool FullscreenDetector::isFullscreenOnMonitor(HMONITOR monitor) const {
+    const HWND foreground = GetForegroundWindow();
+    return monitor && MonitorFromWindow(foreground, MONITOR_DEFAULTTONULL) == monitor &&
+           isFullscreenWindow(foreground);
 }
 
 void CALLBACK FullscreenDetector::eventCallback(HWINEVENTHOOK /*hook*/,

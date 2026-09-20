@@ -21,6 +21,7 @@ public:
     bool initialize(HWND owner);
     void shutdown();
     bool isFullscreen() const;
+    bool isFullscreenOnMonitor(HMONITOR monitor) const;
 
 private:
     static void CALLBACK eventCallback(HWINEVENTHOOK hook,

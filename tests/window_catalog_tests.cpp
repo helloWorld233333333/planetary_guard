@@ -8,6 +8,12 @@ int main() {
         using namespace planetary::platform;
         const RECT monitor{-1920, 0, 0, 1080};
         const RECT dockBounds{-1300, 900, -600, 1000};
+        const auto secondEdge = centeredBottomRevealBounds(RECT{1920, -200, 3200, 824}, 700);
+        if (secondEdge.left != 2210 || secondEdge.right != 2910 || secondEdge.top != 822)
+            throw std::runtime_error("target screen must have its own centered physical edge");
+        const auto wideEdge = centeredBottomRevealBounds(monitor, 3000);
+        if (wideEdge.left != -1920 || wideEdge.right != 0)
+            throw std::runtime_error("activation width must fit narrow screens");
         const auto edge = bottomRevealBounds(monitor, dockBounds);
         if (edge.top != 1078 || edge.bottom != 1080 || edge.left != -1300 || edge.right != -600)
             throw std::runtime_error("reveal must use physical bottom on negative-coordinate monitor");

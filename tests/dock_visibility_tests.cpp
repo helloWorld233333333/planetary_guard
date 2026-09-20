@@ -95,9 +95,49 @@ struct DockVisibilityTestAccess {
             dock.hoverRevealController_.begin(false);
             dock.hoverRevealController_.update(true, 0, 300);
             SendMessageW(dock.hwnd_, WM_TIMER, 0x5051U, 0);
+            GetMonitorInfoW(MonitorFromPoint(current, MONITOR_DEFAULTTONEAREST), &monitor);
             expect(dock.revealBounds_.top == monitor.rcMonitor.bottom - 2 &&
                    dock.revealBounds_.bottom == monitor.rcMonitor.bottom,
                    "main timer must refresh physical edge even when taskbar changes");
+        }
+
+        // 真实显示器几何 + 自建 HWND：不移动系统鼠标，不修改用户配置。
+        std::vector<HMONITOR> monitors;
+        EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL {
+            reinterpret_cast<std::vector<HMONITOR>*>(data)->push_back(monitor);
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&monitors));
+        dock.settings_.behavior.hideInFullscreen = false;
+        ULONGLONG tick = 10000;
+        for (const HMONITOR monitor : monitors) {
+            MONITORINFO info{sizeof(MONITORINFO)};
+            GetMonitorInfoW(monitor, &info);
+            const POINT edge{(info.rcMonitor.left + info.rcMonitor.right) / 2, info.rcMonitor.bottom - 1};
+            dock.dismissAfterApplicationActivation();
+            dock.updateRevealPointer({edge.x, edge.y - 100}, tick);
+            dock.updateRevealPointer(edge, tick + 100);
+            expect(!IsWindowVisible(dock.hwnd_), "cross-screen reveal must wait");
+            dock.updateRevealPointer(edge, tick + 400);
+            expect(IsWindowVisible(dock.hwnd_), "each connected screen must reveal dock");
+            expect(MonitorFromWindow(dock.hwnd_, MONITOR_DEFAULTTONEAREST) == monitor,
+                   "actual dock HWND must move to candidate monitor");
+            expect(MonitorFromWindow(dock.backdropWindow_, MONITOR_DEFAULTTONEAREST) == monitor,
+                   "glass HWND must move with dock");
+            tick += 1000;
+        }
+        std::cout << "Native monitor migration tested on " << monitors.size() << " display(s).\n";
+        if (monitors.size() > 1) {
+            const HMONITOR destination = monitors.front();
+            MONITORINFO info{sizeof(MONITORINFO)};
+            GetMonitorInfoW(destination, &info);
+            const POINT edge{(info.rcMonitor.left + info.rcMonitor.right) / 2, info.rcMonitor.bottom - 1};
+            dock.updateRevealPointer(edge, tick);
+            expect(MonitorFromWindow(dock.hwnd_, MONITOR_DEFAULTTONEAREST) != destination,
+                   "visible dock must not jump before dwell");
+            dock.updateRevealPointer(edge, tick + 300);
+            expect(IsWindowVisible(dock.hwnd_) &&
+                   MonitorFromWindow(dock.hwnd_, MONITOR_DEFAULTTONEAREST) == destination,
+                   "visible dock must also migrate after cross-screen dwell");
         }
 
         // 同一应用保持前台，不能依赖前台切换事件；外部按下消息必须收起。

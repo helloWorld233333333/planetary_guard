@@ -72,6 +72,7 @@ private:
     void toggleStartup();
     void openConfigFolder();
     void handleFullscreenChanged();
+    void writeDiagnosticState() const;
     void openSettingsWindow();
     void applySettings(const domain::AppSettings& settings);
     void requestIcons();
@@ -123,6 +124,7 @@ private:
     bool trackingMouse_ = false;
     bool trackingEdgeMouse_ = false;
     RECT revealBounds_{};
+    ULONGLONG revealPollCount_ = 0;
     dock::HoverRevealController hoverRevealController_;
     HWND revealedForeground_ = nullptr;
     bool manuallyHidden_ = false;

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <string>
 #include <unordered_set>
@@ -414,6 +415,8 @@ void DockWindow::showDock() {
         autoHideController_.onShowCompleted();
     }
     outsideClickObserver_.start(hwnd_);
+    // 可见时仍允许从另一块屏幕触底迁移；同屏不重复唤出。
+    SetTimer(hwnd_, kRevealTimerId, 50U, nullptr);
 }
 
 void DockWindow::hideDock() {
@@ -452,7 +455,7 @@ bool DockWindow::refreshRevealBounds() {
 
 /** 隐藏时检测底边停留，不创建拦截鼠标的窗口，系统任务栏覆盖边缘也不影响检测。 */
 void DockWindow::startRevealWatch() {
-    if (manuallyHidden_ || hiddenForFullscreen_) return;
+    if (manuallyHidden_) return;
     ShowWindow(edgeWindow_, SW_HIDE);
     if (!refreshRevealBounds()) return;
     POINT pointer{};
@@ -462,17 +465,54 @@ void DockWindow::startRevealWatch() {
 }
 
 void DockWindow::pollRevealPointer() {
+    ++revealPollCount_;
     POINT pointer{};
-    if (!refreshRevealBounds() || !GetCursorPos(&pointer)) return;
+    if (!GetCursorPos(&pointer)) {
+        hoverRevealController_.begin(false);
+        return;
+    }
     const bool pointerPressed = ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) |
         GetAsyncKeyState(VK_MBUTTON) | GetAsyncKeyState(VK_XBUTTON1) | GetAsyncKeyState(VK_XBUTTON2)) & 0x8000) != 0;
     updateRevealPointer(pointer, GetTickCount64(), pointerPressed);
 }
 
 void DockWindow::updateRevealPointer(POINT pointer, ULONGLONG now, bool pointerPressed) {
-    if (manuallyHidden_ || hiddenForFullscreen_ || IsWindowVisible(hwnd_)) return;
+    if (manuallyHidden_ || menuOpen_ || autoHideController_.visibilityLockCount() != 0) {
+        hoverRevealController_.begin(false);
+        return;
+    }
+    const HMONITOR candidate = MonitorFromPoint(pointer, MONITOR_DEFAULTTONULL);
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (!candidate || !GetMonitorInfoW(candidate, &monitor)) {
+        hoverRevealController_.begin(false);
+        return;
+    }
+    const bool sameMonitor = candidate == targetMonitor();
+    if (sameMonitor) {
+        if (!refreshRevealBounds()) return;
+    } else {
+        revealBounds_ = centeredBottomRevealBounds(monitor.rcMonitor, static_cast<LONG>(layout_.width));
+    }
+    const bool blocked = (sameMonitor && IsWindowVisible(hwnd_)) ||
+        (settings_.behavior.hideInFullscreen && fullscreenDetector_.isFullscreenOnMonitor(candidate));
+    if (blocked) {
+        hoverRevealController_.begin(false);
+        return;
+    }
     if (hoverRevealController_.update(PtInRect(&revealBounds_, pointer) != FALSE, now,
-            std::max(300U, settings_.behavior.showDelayMs), pointerPressed)) {
+            std::max(300U, settings_.behavior.showDelayMs), pointerPressed,
+            reinterpret_cast<std::uintptr_t>(candidate))) {
+        if (!sameMonitor) {
+            // 不保存每次迁移：旧首选屏幕仅决定启动位置，运行时触底优先。
+            settings_.placement.monitorId = monitorId(candidate);
+            pointerX_ = -1.0F;
+            positionWindow();
+            dpiScale_ = readDpiScale();
+            updateLayout();
+            positionWindow();
+        }
+        hiddenForFullscreen_ = false;
+        autoHideController_.setFullscreen(false);
         showDockFromEdge();
     }
 }
@@ -509,9 +549,7 @@ void DockWindow::handleForegroundChanged(HWND foreground) {
 void DockWindow::showDockFromEdge() {
     if (manuallyHidden_ || hiddenForFullscreen_) return;
     autoHideController_.forceShow();
-    if (autoHideController_.wantsShow()) {
-        showDock();
-    }
+    showDock();
 }
 
 void DockWindow::applyWindowOpacity() {
@@ -1265,7 +1303,7 @@ void DockWindow::handleFullscreenChanged() {
         ShowWindow(hwnd_, SW_HIDE);
         ShowWindow(backdropWindow_, SW_HIDE);
         KillTimer(hwnd_, kHideTimerId);
-        KillTimer(hwnd_, kRevealTimerId);
+        startRevealWatch();
     } else if (!fullscreen && hiddenForFullscreen_) {
         hiddenForFullscreen_ = false;
         if (wasVisibleBeforeFullscreen_ && !manuallyHidden_) {
@@ -1276,6 +1314,30 @@ void DockWindow::handleFullscreenChanged() {
             startRevealWatch();
         }
     }
+}
+
+/** 显式环境开关启用的本地故障快照；默认不写文件，不记录窗口标题或输入内容。 */
+void DockWindow::writeDiagnosticState() const {
+    wchar_t path[32768]{};
+    const DWORD length = GetEnvironmentVariableW(L"PLANETARY_GUARD_DIAGNOSTICS", path, 32768);
+    if (!length || length >= 32768) return;
+    RECT bounds{};
+    GetWindowRect(hwnd_, &bounds);
+    POINT pointer{};
+    const BOOL cursorAvailable = GetCursorPos(&pointer);
+    const bool buttonPressed = ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) |
+        GetAsyncKeyState(VK_MBUTTON) | GetAsyncKeyState(VK_XBUTTON1) | GetAsyncKeyState(VK_XBUTTON2)) & 0x8000) != 0;
+    std::ofstream output(std::filesystem::path(path), std::ios::trunc);
+    output << "visible=" << !!IsWindowVisible(hwnd_) << " manual=" << manuallyHidden_
+           << " fullscreenBlocked=" << hiddenForFullscreen_
+           << " detectedFullscreen=" << fullscreenDetector_.isFullscreen()
+           << " state=" << static_cast<int>(autoHideController_.state())
+           << " locks=" << autoHideController_.visibilityLockCount()
+           << " polls=" << revealPollCount_ << " cursorAvailable=" << !!cursorAvailable
+           << " insideEdge=" << (cursorAvailable && PtInRect(&revealBounds_, pointer))
+           << " buttonPressed=" << buttonPressed << " delay=" << settings_.behavior.showDelayMs
+           << " dock=" << bounds.left << ',' << bounds.top << ',' << bounds.right << ',' << bounds.bottom
+           << " edge=" << revealBounds_.left << ',' << revealBounds_.top << ',' << revealBounds_.right << ',' << revealBounds_.bottom;
 }
 
 const domain::DockItem* DockWindow::findItemById(const std::string& id) const {
@@ -1621,6 +1683,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             // 最大化/F11/任务栏设置可在不切换前台窗口时发生，低频复核避免卡在全屏状态。
             handleFullscreenChanged();
             refreshRunningState();
+            writeDiagnosticState();
             return 0;
         }
         if (wParam == kHideTimerId) {
