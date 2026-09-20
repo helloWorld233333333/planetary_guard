@@ -1,4 +1,5 @@
 #include "dock/AutoHideController.h"
+#include "dock/HoverRevealController.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -22,6 +23,21 @@ void testLeaveAndTimeoutHide() {
     controller.onHideCompleted();
     expectTrue(controller.state() == AutoHideState::Hidden,
                "completed hide should become hidden");
+}
+
+void testHoverRevealRequiresReentryAndContinuousDwell() {
+    planetary::dock::HoverRevealController reveal;
+    reveal.begin(true);
+    expectTrue(!reveal.update(true, 1000, 80), "click pointer must not reopen immediately");
+    expectTrue(!reveal.update(false, 1050, 80), "leaving should arm without opening");
+    expectTrue(!reveal.update(true, 1100, 80), "entry must respect hover delay");
+    expectTrue(!reveal.update(false, 1140, 80), "leaving cancels dwell");
+    expectTrue(!reveal.update(true, 1200, 80), "reentry starts a fresh delay");
+    expectTrue(!reveal.update(true, 1279, 80), "must not reveal before delay expires");
+    expectTrue(reveal.update(true, 1280, 80), "continuous hover must reveal");
+    reveal.begin(false);
+    expectTrue(!reveal.update(true, 0, 80), "zero timestamp must be valid");
+    expectTrue(reveal.update(true, 80, 80), "external activation allows first hover");
 }
 
 void testActivationDismissesWithoutAutoHideAndEdgeRestores() {
@@ -119,6 +135,7 @@ void testDisablingAutoHideWhileFullscreenRestoresVisibleState() {
 int main() {
     try {
         testLeaveAndTimeoutHide();
+        testHoverRevealRequiresReentryAndContinuousDwell();
         testActivationDismissesWithoutAutoHideAndEdgeRestores();
         testActivationDuringNestedMenuAndShowing();
         testEnterCancelsPendingAndShowsHiddenDock();

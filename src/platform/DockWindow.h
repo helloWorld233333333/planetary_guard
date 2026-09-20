@@ -3,6 +3,7 @@
 #include "config/DockItemStore.h"
 #include "config/SettingsStore.h"
 #include "dock/AutoHideController.h"
+#include "dock/HoverRevealController.h"
 #include "domain/AppSettings.h"
 #include "domain/DockItem.h"
 #include "layout/LayoutEngine.h"
@@ -57,6 +58,9 @@ private:
     void releaseVisibilityLock();
     void handleForegroundChanged(HWND foreground);
     void showDockFromEdge();
+    void startRevealWatch();
+    void pollRevealPointer();
+    void updateRevealPointer(POINT pointer, ULONGLONG now);
     void scheduleHide();
     void applyWindowOpacity();
     void applyBackdropEffect();
@@ -116,6 +120,9 @@ private:
     bool edgeClassRegistered_ = false;
     bool trackingMouse_ = false;
     bool trackingEdgeMouse_ = false;
+    RECT revealBounds_{};
+    dock::HoverRevealController hoverRevealController_;
+    HWND revealedForeground_ = nullptr;
     bool manuallyHidden_ = false;
     bool dragging_ = false;
     bool menuOpen_ = false;

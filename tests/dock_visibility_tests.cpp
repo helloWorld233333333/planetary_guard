@@ -17,7 +17,10 @@ struct DockVisibilityTestAccess {
                 L"STATIC", L"Dock visibility test", WS_POPUP,
                 -30000, -30000, 100, 50, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
         };
-        dock.hwnd_ = makeWindow();
+        expect(dock.registerWindowClass(), "native window class registration failed");
+        dock.hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            L"PlanetaryGuardDockWindow", L"Dock visibility test", WS_POPUP,
+            -30000, -30000, 100, 50, nullptr, nullptr, GetModuleHandleW(nullptr), &dock);
         dock.backdropWindow_ = makeWindow();
         dock.edgeWindow_ = makeWindow();
         expect(dock.hwnd_ && dock.backdropWindow_ && dock.edgeWindow_, "test window creation failed");
@@ -39,7 +42,16 @@ struct DockVisibilityTestAccess {
             dock.releaseVisibilityLock();
             expect(!IsWindowVisible(dock.hwnd_), "icon window must actually hide");
             expect(!IsWindowVisible(dock.backdropWindow_), "material window must actually hide");
-            expect(IsWindowVisible(dock.edgeWindow_), "edge must be available after dismissal");
+            expect(!IsWindowVisible(dock.edgeWindow_), "reveal must not intercept taskbar input");
+            const RECT activationBounds = dock.revealBounds_;
+            RECT originalBounds{};
+            GetWindowRect(dock.hwnd_, &originalBounds);
+            expect(activationBounds.top <= originalBounds.top,
+                   "hovering the original Dock area must be able to restore it");
+            MONITORINFO monitor{sizeof(MONITORINFO)};
+            GetMonitorInfoW(dock.targetMonitor(), &monitor);
+            expect(activationBounds.bottom == monitor.rcMonitor.bottom,
+                   "reveal area must reach physical bottom below the taskbar");
             dock.handleMessage(WM_MOUSEMOVE, 0, MAKELPARAM(20, 20));
             expect(dock.autoHideController_.state() == dock::AutoHideState::Hidden,
                    "stale pointer message must not undo dismissal");
@@ -48,15 +60,30 @@ struct DockVisibilityTestAccess {
             dock.showDockFromEdge();
             expect(!IsWindowVisible(dock.hwnd_), "manual hide must win over edge events");
             dock.manuallyHidden_ = false;
-            dock.autoHideController_.onMouseEnter();
-            expect(dock.autoHideController_.wantsShow(), "edge must request restoration");
-            dock.autoHideController_.onShowCompleted();
-            ShowWindow(dock.hwnd_, SW_SHOWNOACTIVATE);
-            ShowWindow(dock.backdropWindow_, SW_SHOWNOACTIVATE);
+            dock.updateRevealPointer({activationBounds.left - 1, activationBounds.top}, 1000);
+            const POINT hover{activationBounds.left + 5, activationBounds.top + 5};
+            dock.updateRevealPointer(hover, 1100);
+            expect(!IsWindowVisible(dock.hwnd_), "hover delay must be honored");
+            dock.updateRevealPointer(hover, 1181);
+            expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
+                   "hover must actually restore both native windows");
+            expect(dock.autoHideController_.state() == dock::AutoHideState::Visible,
+                   "native reveal must finish in visible state");
+            dock.handleForegroundChanged(dock.revealedForeground_);
+            expect(IsWindowVisible(dock.hwnd_), "same foreground event must not dismiss revealed Dock");
             // 不持锁的成功路径也必须立即隐藏两层窗口。
             dock.dismissAfterApplicationActivation();
             expect(!IsWindowVisible(dock.hwnd_) && !IsWindowVisible(dock.backdropWindow_),
                    "unlocked activation must hide both layers synchronously");
+            // 不移动真实鼠标：将测试热区放到当前位置，验证真正的 WM_TIMER 分发。
+            POINT current{};
+            expect(GetCursorPos(&current), "cursor read failed");
+            dock.revealBounds_ = {current.x - 100, current.y - 100, current.x + 100, current.y + 100};
+            dock.hoverRevealController_.begin(false);
+            dock.hoverRevealController_.update(true, 0, 80);
+            SendMessageW(dock.hwnd_, WM_TIMER, 0x5051U, 0);
+            expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
+                   "main window timer must reach native reveal path");
         }
     }
 };

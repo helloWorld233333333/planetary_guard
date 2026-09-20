@@ -36,6 +36,7 @@ constexpr UINT kHideTimerId = 0x5047U;
 constexpr UINT kShowTimerId = 0x5048U;
 constexpr UINT kRunningStateTimerId = 0x5049U;
 constexpr UINT kAnimationTimerId = 0x5050U;
+constexpr UINT kRevealTimerId = 0x5051U;
 constexpr UINT kContextOpenCommand = 1001U;
 constexpr UINT kContextRemoveCommand = 1002U;
 constexpr UINT kContextAddCommand = 1003U;
@@ -386,13 +387,16 @@ BOOL CALLBACK DockWindow::findMonitorProc(HMONITOR monitor,
 
 void DockWindow::showDock() {
     if (hwnd_ == nullptr) return;
+    KillTimer(hwnd_, kRevealTimerId);
+    revealedForeground_ = GetForegroundWindow();
     KillTimer(hwnd_, kHideTimerId);
     if (edgeWindow_ != nullptr) KillTimer(edgeWindow_, kShowTimerId);
     trackingEdgeMouse_ = false;
     ShowWindow(edgeWindow_, SW_HIDE);
     positionWindow();
     renderer_.render(layout_, items_);
-    ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     if (backdropAvailable_) ShowWindow(backdropWindow_, SW_SHOWNOACTIVATE);
     positionWindow();
     UpdateWindow(hwnd_);
@@ -420,9 +424,36 @@ void DockWindow::hideDock() {
     ShowWindow(hwnd_, SW_HIDE);
     ShowWindow(backdropWindow_, SW_HIDE);
     if (autoHideController_.wantsHide() && !manuallyHidden_ && !hiddenForFullscreen_) {
-        positionEdgeWindow();
-        ShowWindow(edgeWindow_, SW_SHOWNOACTIVATE);
         autoHideController_.onHideCompleted();
+        startRevealWatch();
+    }
+}
+
+/** 热区覆盖原 Dock 到屏幕底边。只在隐藏时读取鼠标位置，不覆盖或拦截其他窗口。 */
+void DockWindow::startRevealWatch() {
+    if (manuallyHidden_ || hiddenForFullscreen_) return;
+    ShowWindow(edgeWindow_, SW_HIDE);
+    if (!GetWindowRect(hwnd_, &revealBounds_)) return;
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (GetMonitorInfoW(targetMonitor(), &monitor)) {
+        revealBounds_.bottom = monitor.rcMonitor.bottom;
+    }
+    POINT pointer{};
+    const bool inside = GetCursorPos(&pointer) && PtInRect(&revealBounds_, pointer);
+    hoverRevealController_.begin(inside);
+    SetTimer(hwnd_, kRevealTimerId, 50U, nullptr);
+}
+
+void DockWindow::pollRevealPointer() {
+    POINT pointer{};
+    if (GetCursorPos(&pointer)) updateRevealPointer(pointer, GetTickCount64());
+}
+
+void DockWindow::updateRevealPointer(POINT pointer, ULONGLONG now) {
+    if (manuallyHidden_ || hiddenForFullscreen_ || IsWindowVisible(hwnd_)) return;
+    if (hoverRevealController_.update(PtInRect(&revealBounds_, pointer) != FALSE, now,
+            std::max(20U, settings_.behavior.showDelayMs))) {
+        showDockFromEdge();
     }
 }
 
@@ -441,6 +472,8 @@ void DockWindow::releaseVisibilityLock() {
 /** 外部应用获得前台也收起；桌面、任务栏和 Dock 自己的设置窗口不触发。 */
 void DockWindow::handleForegroundChanged(HWND foreground) {
     if (!foreground || foreground != GetForegroundWindow() || !IsWindowVisible(foreground)) return;
+    // 唤出时的前台应用没有变化，迟到或重复的通知不应立即收起刚显示的 Dock。
+    if (foreground == revealedForeground_) return;
     DWORD processId = 0;
     GetWindowThreadProcessId(foreground, &processId);
     if (!processId || processId == GetCurrentProcessId()) return;
@@ -455,7 +488,7 @@ void DockWindow::handleForegroundChanged(HWND foreground) {
 
 void DockWindow::showDockFromEdge() {
     if (manuallyHidden_ || hiddenForFullscreen_) return;
-    autoHideController_.onMouseEnter();
+    autoHideController_.forceShow();
     if (autoHideController_.wantsShow()) {
         showDock();
     }
@@ -1093,6 +1126,7 @@ void DockWindow::handleTrayCommand(TrayCommand command) {
     case TrayCommand::HideDock:
         // 手动隐藏不启动边缘唤出，用户可通过托盘“显示 Dock”恢复。
         manuallyHidden_ = true;
+        KillTimer(hwnd_, kRevealTimerId);
         KillTimer(hwnd_, kHideTimerId);
         if (edgeWindow_ != nullptr) {
             KillTimer(edgeWindow_, kShowTimerId);
@@ -1209,11 +1243,15 @@ void DockWindow::handleFullscreenChanged() {
         ShowWindow(hwnd_, SW_HIDE);
         ShowWindow(backdropWindow_, SW_HIDE);
         KillTimer(hwnd_, kHideTimerId);
+        KillTimer(hwnd_, kRevealTimerId);
     } else if (!fullscreen && hiddenForFullscreen_) {
         hiddenForFullscreen_ = false;
         if (wasVisibleBeforeFullscreen_ && !manuallyHidden_) {
             autoHideController_.forceShow();
             showDock();
+        } else if (!manuallyHidden_) {
+            // 全屏结束时原本已收起，也必须恢复唤出检测。
+            startRevealWatch();
         }
     }
 }
@@ -1540,6 +1578,10 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         releaseVisibilityLock();
         return 0;
     case WM_TIMER:
+        if (wParam == kRevealTimerId) {
+            pollRevealPointer();
+            return 0;
+        }
         if (wParam == kAnimationTimerId) {
             advanceAnimation();
             return 0;
@@ -1581,6 +1623,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_ERASEBKGND:
         return 1;
     case WM_DESTROY:
+        KillTimer(hwnd_, kRevealTimerId);
         if (backdropWindow_ != nullptr) { DestroyWindow(backdropWindow_); backdropWindow_ = nullptr; }
         KillTimer(hwnd_, kAnimationTimerId);
         KillTimer(hwnd_, kHideTimerId);

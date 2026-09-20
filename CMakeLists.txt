@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(PlanetaryGuard VERSION 0.1.6 LANGUAGES CXX)
+project(PlanetaryGuard VERSION 0.1.7 LANGUAGES CXX)
 
 if(MSVC AND MSVC_VERSION LESS 1929)
     message(FATAL_ERROR
