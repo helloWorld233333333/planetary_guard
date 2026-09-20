@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(PlanetaryGuard VERSION 0.1.7 LANGUAGES CXX)
+project(PlanetaryGuard VERSION 0.1.8 LANGUAGES CXX)
 
 if(MSVC AND MSVC_VERSION LESS 1929)
     message(FATAL_ERROR
@@ -44,6 +44,7 @@ if(WIN32 AND PLANETARY_GUARD_BUILD_APP AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/s
         src/platform/DockWindow.cpp
         src/platform/DockRenderer.cpp
         src/platform/FullscreenDetector.cpp
+        src/platform/OutsideClickObserver.cpp
         src/platform/IconLoader.cpp
         src/platform/IconNormalizer.cpp
         src/platform/ShellLauncher.cpp

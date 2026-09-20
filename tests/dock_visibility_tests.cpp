@@ -85,6 +85,39 @@ struct DockVisibilityTestAccess {
             expect(IsWindowVisible(dock.hwnd_) && IsWindowVisible(dock.backdropWindow_),
                    "main window timer must reach native reveal path");
         }
+
+        // 同一应用保持前台，不能依赖前台切换事件；外部按下消息必须收起。
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            dock.showDockFromEdge();
+            expect(dock.outsideClickObserver_.hook_ != nullptr, "visible dock must observe outside clicks");
+            RECT bounds{};
+            GetWindowRect(dock.hwnd_, &bounds);
+            const POINT inside{bounds.left + 5, bounds.top + 5};
+            const POINT outside{bounds.left - 10, bounds.top};
+            const auto dispatchPress = [&](POINT point) {
+                // 注入自建窗口的监听入口，不生成系统输入，也不点击用户应用。
+                dock.outsideClickObserver_.notifyPointerDown(point);
+                MSG message{};
+                while (PeekMessageW(&message, dock.hwnd_, OutsideClickObserver::kPressedMessage,
+                                    OutsideClickObserver::kPressedMessage, PM_REMOVE)) {
+                    DispatchMessageW(&message);
+                }
+            };
+            dispatchPress(inside);
+            expect(IsWindowVisible(dock.hwnd_), "inside click must not interrupt icon handling");
+            dock.menuOpen_ = true;
+            dispatchPress(outside);
+            expect(IsWindowVisible(dock.hwnd_), "open menu must not be dismissed by outside observer");
+            dock.menuOpen_ = false;
+            const auto oldGeneration = dock.outsideClickObserver_.generation_;
+            dispatchPress(outside);
+            expect(!IsWindowVisible(dock.hwnd_) && !IsWindowVisible(dock.backdropWindow_),
+                   "clicking the same foreground app after hover reveal must dismiss every time");
+            expect(dock.outsideClickObserver_.hook_ == nullptr, "hidden dock must stop observing clicks");
+            dock.showDockFromEdge();
+            SendMessageW(dock.hwnd_, OutsideClickObserver::kPressedMessage, oldGeneration, 0);
+            expect(IsWindowVisible(dock.hwnd_), "old click message must not dismiss a new reveal");
+        }
     }
 };
 }

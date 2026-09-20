@@ -9,6 +9,7 @@
 #include "layout/LayoutEngine.h"
 #include "platform/DockRenderer.h"
 #include "platform/FullscreenDetector.h"
+#include "platform/OutsideClickObserver.h"
 #include "platform/IconLoader.h"
 #include "platform/ShellLauncher.h"
 #include "platform/StartupManager.h"
@@ -138,6 +139,7 @@ private:
     SettingsWindow settingsWindow_;
     TrayController trayController_;
     FullscreenDetector fullscreenDetector_;
+    OutsideClickObserver outsideClickObserver_;
     IconLoader iconLoader_;
     bool hiddenForFullscreen_ = false;
     bool wasVisibleBeforeFullscreen_ = true;

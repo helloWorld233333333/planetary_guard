@@ -98,6 +98,7 @@ DockWindow::DockWindow(HINSTANCE instance, bool inspectWindow)
       }) {}
 
 DockWindow::~DockWindow() {
+    outsideClickObserver_.stop();
     iconLoader_.stop();
     trayController_.remove();
     if (edgeWindow_ != nullptr && IsWindow(edgeWindow_)) {
@@ -403,10 +404,12 @@ void DockWindow::showDock() {
     if (autoHideController_.wantsShow()) {
         autoHideController_.onShowCompleted();
     }
+    outsideClickObserver_.start(hwnd_);
 }
 
 void DockWindow::hideDock() {
     if (hwnd_ == nullptr) return;
+    outsideClickObserver_.stop();
     KillTimer(hwnd_, kHideTimerId);
     KillTimer(hwnd_, kAnimationTimerId);
     animating_ = false;
@@ -1124,6 +1127,7 @@ void DockWindow::handleTrayCommand(TrayCommand command) {
         showDock();
         break;
     case TrayCommand::HideDock:
+        outsideClickObserver_.stop();
         // 手动隐藏不启动边缘唤出，用户可通过托盘“显示 Dock”恢复。
         manuallyHidden_ = true;
         KillTimer(hwnd_, kRevealTimerId);
@@ -1237,6 +1241,7 @@ void DockWindow::handleFullscreenChanged() {
     if (!settings_.behavior.hideInFullscreen) return;
 
     if (fullscreen && !hiddenForFullscreen_) {
+        outsideClickObserver_.stop();
         wasVisibleBeforeFullscreen_ = IsWindowVisible(hwnd_) != FALSE;
         hiddenForFullscreen_ = true;
         ShowWindow(edgeWindow_, SW_HIDE);
@@ -1444,6 +1449,14 @@ LRESULT DockWindow::handleEdgeMessage(UINT message, WPARAM wParam, LPARAM lParam
 }
 
 LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == OutsideClickObserver::kPressedMessage) {
+        // 世代号屏蔽上次显示期间排队的点击，防止下一次唤出后立即又被收起。
+        if (outsideClickObserver_.isCurrentNotification(wParam) && IsWindowVisible(hwnd_) &&
+            !menuOpen_ && autoHideController_.visibilityLockCount() == 0U) {
+            dismissAfterApplicationActivation();
+        }
+        return 0;
+    }
     if (message == TrayController::kCallbackMessage) {
         handleTrayCallback(lParam);
         return 0;
@@ -1623,6 +1636,7 @@ LRESULT DockWindow::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_ERASEBKGND:
         return 1;
     case WM_DESTROY:
+        outsideClickObserver_.stop();
         KillTimer(hwnd_, kRevealTimerId);
         if (backdropWindow_ != nullptr) { DestroyWindow(backdropWindow_); backdropWindow_ = nullptr; }
         KillTimer(hwnd_, kAnimationTimerId);
