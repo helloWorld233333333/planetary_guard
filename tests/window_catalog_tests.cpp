@@ -24,6 +24,15 @@ int main() {
             throw std::runtime_error("autohide-taskbar maximized app must not be fullscreen");
         if (!isFullscreenCoverage(monitor, monitor, false, WS_POPUP))
             throw std::runtime_error("borderless fullscreen must still be detected");
+        // 来自实机钉钉窗口：自绘边框、保留系统菜单、处于最大化。
+        if (isFullscreenCoverage(monitor, monitor, true, 0x97080000L))
+            throw std::runtime_error("maximized DingTalk custom frame must not suppress dock");
+        if (!isFullscreenCoverage(monitor, monitor, true, WS_POPUP | WS_VISIBLE | WS_MAXIMIZE))
+            throw std::runtime_error("maximized borderless game without window controls must remain fullscreen");
+        if (!isFullscreenCoverage(monitor, monitor, false, WS_POPUP | WS_VISIBLE | WS_SYSMENU))
+            throw std::runtime_error("nonmaximized fullscreen video retaining system menu must remain fullscreen");
+        if (!isFullscreenCoverage(monitor, monitor, false, WS_POPUP | WS_VISIBLE))
+            throw std::runtime_error("video or game entering borderless fullscreen must suppress dock");
         const auto work = dockWorkArea(monitor, maximized, 48);
         if (work.bottom != 1032) throw std::runtime_error("dock must avoid autohide taskbar area");
         if (dockWorkArea(monitor, maximized, 0).bottom != 1078)
