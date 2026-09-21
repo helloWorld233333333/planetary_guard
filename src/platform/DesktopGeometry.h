@@ -22,7 +22,10 @@ inline RECT bottomRevealBounds(const RECT& monitor, const RECT& dock) {
 /** 普通最大化窗口在任务栏自动隐藏时可能贴边，不能据此认定为全屏。 */
 inline bool isFullscreenCoverage(const RECT& window, const RECT& monitor,
                                  bool maximized, LONG_PTR style) {
-    if (maximized && (style & (WS_CAPTION | WS_THICKFRAME)) != 0) return false;
+    // 钉钉等自绘窗口最大化后去掉标准边框，但保留系统菜单。
+    // 仅系统菜单或仅最大化均不足以放行，避免放行常见无边框游戏/视频。
+    constexpr LONG_PTR windowControls = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU;
+    if (maximized && (style & windowControls) != 0) return false;
     constexpr LONG tolerance = 2;
     return std::abs(window.left - monitor.left) <= tolerance &&
            std::abs(window.top - monitor.top) <= tolerance &&

@@ -52,7 +52,7 @@ bool registerInstall(const std::filesystem::path& destination) {
     GetSystemDirectoryW(systemDirectory, MAX_PATH);
     const std::wstring powershell = (std::filesystem::path(systemDirectory) / L"WindowsPowerShell/v1.0/powershell.exe").wstring();
     write(L"DisplayName", L"Planetary Guard");
-    write(L"DisplayVersion", L"0.1.12");
+    write(L"DisplayVersion", L"0.1.13");
     write(L"Publisher", L"Planetary Guard Contributors");
     write(L"InstallLocation", destination.wstring());
     write(L"DisplayIcon", executable.wstring());
@@ -72,7 +72,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     LocalFree(arguments);
     if (local.empty() || !destination.is_absolute()) return 2;
     if (!extractOnly && MessageBoxW(nullptr,
-        (L"安装 Planetary Guard 0.1.12 到：\n" + destination.wstring() + L"\n\n请先退出正在运行的 Dock。用户配置会保留。").c_str(),
+        (L"安装 Planetary Guard 0.1.13 到：\n" + destination.wstring() + L"\n\n请先退出正在运行的 Dock。用户配置会保留。").c_str(),
         L"Planetary Guard 安装", MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) return 0;
     std::error_code error;
     std::filesystem::create_directories(destination, error);

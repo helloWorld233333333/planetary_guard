@@ -1,7 +1,7 @@
 param(
-    [string]$BuildDirectory = (Join-Path $PSScriptRoot '..\build-native-v17'),
+    [string]$BuildDirectory = (Join-Path $PSScriptRoot '..\build-native-v18'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist'),
-    [string]$Version = '0.1.12'
+    [string]$Version = '0.1.13'
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
